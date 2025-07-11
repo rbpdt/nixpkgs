@@ -1,0 +1,16 @@
+diff --git a/python/triton/runtime/autotuner.py b/python/triton/runtime/autotuner.py
+index f5fb73c4f..67f072c94 100644
+--- a/python/triton/runtime/autotuner.py
++++ b/python/triton/runtime/autotuner.py
+@@ -316,9 +316,9 @@ class Config:
+         res.append(f"maxnreg: {self.maxnreg}")
+         return ", ".join(res)
+ 
+-
++import subprocess
+ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, pre_hook=None, post_hook=None,
+-             warmup=None, rep=None, use_cuda_graph=False, do_bench=None):
++             warmup=None, rep=None, use_cuda_graph=False, do_bench=(None if (lambda: subprocess.run('nvidia-smi', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).returncode == 0)() else False)):
+     """
+     Decorator for auto-tuning a :code:`triton.jit`'d function.
+ 

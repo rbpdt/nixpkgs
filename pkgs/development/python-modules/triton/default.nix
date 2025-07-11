@@ -10,7 +10,6 @@
   gtest,
   libxml2,
   lit,
-  llvm,
   ncurses,
   ninja,
   pybind11,
@@ -25,64 +24,41 @@
   rocmSupport ? config.rocmSupport,
   rocmPackages,
   triton,
+  llvm
 }:
 
 buildPythonPackage {
   pname = "triton";
-  version = "3.1.0";
+  version = "3.3.0";
   pyproject = true;
 
   src = fetchFromGitHub {
     owner = "triton-lang";
     repo = "triton";
-    # latest branch commit from https://github.com/triton-lang/triton/commits/release/3.1.x/
-    rev = "cf34004b8a67d290a962da166f5aa2fc66751326";
-    hash = "sha256-233fpuR7XXOaSKN+slhJbE/CMFzAqCRCE4V4rIoJZrk=";
+    # latest branch commit from https://github.com/triton-lang/triton/commits/release/3.3.x/
+    rev = "65c6b88165a169a659935443dafe887f24f1592a";
+    hash = "sha256-iep55kKhw8/utSsCD3UAiJbgmPYqfwBQIXUr+9jHjVU=";
   };
 
-  patches =
-    [
-      ./0001-setup.py-introduce-TRITON_OFFLINE_BUILD.patch
-      (replaceVars ./0001-_build-allow-extra-cc-flags.patch {
-        ccCmdExtraFlags = "-Wl,-rpath,${addDriverRunpath.driverLink}/lib";
-      })
-      (replaceVars ./0002-nvidia-amd-driver-short-circuit-before-ldconfig.patch {
-        libhipDir = if rocmSupport then "${lib.getLib rocmPackages.clr}/lib" else null;
-        libcudaStubsDir =
-          if cudaSupport then "${lib.getOutput "stubs" cudaPackages.cuda_cudart}/lib/stubs" else null;
-      })
-    ]
-    ++ lib.optionals cudaSupport [
-      (replaceVars ./0003-nvidia-cudart-a-systempath.patch {
-        cudaToolkitIncludeDirs = "${lib.getInclude cudaPackages.cuda_cudart}/include";
-      })
-      (replaceVars ./0004-nvidia-allow-static-ptxas-path.patch {
-        nixpkgsExtraBinaryPaths = lib.escapeShellArgs [ (lib.getExe' cudaPackages.cuda_nvcc "ptxas") ];
-      })
-    ];
+  patches = [
+    ./triton-import.patch
+    (replaceVars ./triton-nix.patch {
+      ccCmdExtraFlags = "-Wl,-rpath,${addDriverRunpath.driverLink}/lib";
+    }) ] ++ lib.optionals config.cudaSupport [
+    (replaceVars ./triton-cuda.patch {
+      libcudaStubsDir = "${lib.getLib cudaPackages.cuda_cudart}/lib/stubs";
+      cudaToolkitIncludeDirs = "${lib.getInclude cudaPackages.cuda_cudart}/include";
+      nixpkgsExtraBinaryPaths = lib.escapeShellArgs [ (lib.getExe' cudaPackages.cuda_nvcc "ptxas") ];
+    })];
 
   postPatch = ''
     # Use our `cmakeFlags` instead and avoid downloading dependencies
     # remove any downloads
     substituteInPlace python/setup.py \
-      --replace-fail "get_json_package_info(), get_pybind11_package_info()" ""\
-      --replace-fail "get_pybind11_package_info(), get_llvm_package_info()" ""\
-      --replace-fail 'packages += ["triton/profiler"]' ""\
-      --replace-fail "curr_version != version" "False"
-
-    # Don't fetch googletest
-    substituteInPlace unittest/CMakeLists.txt \
-      --replace-fail "include (\''${CMAKE_CURRENT_SOURCE_DIR}/googletest.cmake)" ""\
-      --replace-fail "include(GoogleTest)" "find_package(GTest REQUIRED)"
-
-    # Patch the source code to make sure it doesn't specify a non-existent PTXAS version.
-    # CUDA 12.6 (the current default/max) tops out at PTXAS version 8.5.
-    # NOTE: This is fixed in `master`:
-    # https://github.com/triton-lang/triton/commit/f48dbc1b106c93144c198fbf3c4f30b2aab9d242
-    substituteInPlace "$NIX_BUILD_TOP/$sourceRoot/third_party/nvidia/backend/compiler.py" \
-      --replace-fail \
-        'return 80 + minor' \
-        'return 80 + min(minor, 5)'
+      --replace-fail "[get_json_package_info()]" "[]"\
+      --replace-fail "[get_llvm_package_info()]" "[]"\
+      --replace-fail 'packages += ["triton/profiler"]' "pass"\
+      --replace-fail "curr_version.group(1) != version" "False"
   '';
 
   build-system = [ setuptools ];
@@ -90,13 +66,13 @@ buildPythonPackage {
   nativeBuildInputs = [
     cmake
     ninja
+    llvm
 
     # Note for future:
     # These *probably* should go in depsTargetTarget
     # ...but we cannot test cross right now anyway
     # because we only support cudaPackages on x86_64-linux atm
     lit
-    llvm
   ];
 
   buildInputs = [
@@ -141,6 +117,7 @@ buildPythonPackage {
     {
       TRITON_BUILD_PROTON = "OFF";
       TRITON_OFFLINE_BUILD = true;
+      LLVM_SYSPATH = "${llvm}";
     }
     // lib.optionalAttrs cudaSupport {
       CC = lib.getExe' cudaPackages.backendStdenv.cc "cc";

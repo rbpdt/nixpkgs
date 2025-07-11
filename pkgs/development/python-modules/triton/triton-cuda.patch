@@ -1,0 +1,57 @@
+diff --git a/third_party/nvidia/backend/compiler.py b/third_party/nvidia/backend/compiler.py
+index 6db76a352..496f5a3c9 100644
+--- a/third_party/nvidia/backend/compiler.py
++++ b/third_party/nvidia/backend/compiler.py
+@@ -38,6 +38,9 @@ def _path_to_binary(binary: str):
+         os.path.join(os.path.dirname(__file__), "bin", binary),
+     ]
+ 
++    import shlex
++    paths.extend(shlex.split("@nixpkgsExtraBinaryPaths@"))
++
+     for path in paths:
+         if os.path.exists(path) and os.path.isfile(path):
+             result = subprocess.check_output([path, "--version"], stderr=subprocess.STDOUT)
+diff --git a/third_party/nvidia/backend/driver.c b/third_party/nvidia/backend/driver.c
+index 12deb0d1e..855764840 100644
+--- a/third_party/nvidia/backend/driver.c
++++ b/third_party/nvidia/backend/driver.c
+@@ -1,4 +1,4 @@
+-#include "cuda.h"
++#include <cuda.h>
+ #include <dlfcn.h>
+ #include <stdbool.h>
+ #define PY_SSIZE_T_CLEAN
+diff --git a/third_party/nvidia/backend/driver.py b/third_party/nvidia/backend/driver.py
+index 5f2621ae5..71bb3fd42 100644
+--- a/third_party/nvidia/backend/driver.py
++++ b/third_party/nvidia/backend/driver.py
+@@ -12,7 +12,8 @@ from triton.backends.compiler import GPUTarget
+ from triton.backends.driver import GPUDriver
+ 
+ dirname = os.path.dirname(os.path.realpath(__file__))
+-include_dir = [os.path.join(dirname, "include")]
++import shlex
++include_dir = [*shlex.split("@cudaToolkitIncludeDirs@"), os.path.join(dirname, "include")]
+ libdevice_dir = os.path.join(dirname, "lib")
+ libraries = ['cuda']
+ 
+@@ -23,6 +24,9 @@ def libcuda_dirs():
+     if env_libcuda_path:
+         return [env_libcuda_path]
+ 
++    if os.path.exists("@libcudaStubsDir@"):
++      return ["@libcudaStubsDir@"]
++
+     libs = subprocess.check_output(["/sbin/ldconfig", "-p"]).decode()
+     # each line looks like the following:
+     # libcuda.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libcuda.so.1
+@@ -196,7 +200,7 @@ def make_launcher(constants, signature):
+     params = [f"&arg{i}" for i, ty in signature.items() if ty != "constexpr"]
+     params.append("&global_scratch")
+     src = f"""
+-#include \"cuda.h\"
++#include <cuda.h>
+ #include <stdbool.h>
+ #include <Python.h>
+ #include <dlfcn.h>
