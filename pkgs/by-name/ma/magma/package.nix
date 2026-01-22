@@ -138,6 +138,13 @@ stdenv.mkDerivation (finalAttrs: {
       hash = "sha256-Dfzq2gqoLSByCLWV5xvY/lXZeVa/yQ67lDSoIAa9jUU=";
     })
   ]
+  ++ lib.optionals (cudaSupport && cudaAtLeast "13.0") [
+    # CUDA 13 removed the deprecated clockRate field from cudaDeviceProp.
+    # This patch uses cudaDeviceGetAttribute instead to fix compilation.
+    # Backport of commits 235aefb7b064954fce09d035c69907ba8a87cbcd and
+    # 9df7b4da53a2cd2105d6c6cdf64022297fa695f4 onto v2.9.0.
+    ./magma-cuda13-fix.patch
+  ]
   ++ lib.optionals rocmSupport [
     # TODO: Drop both these patches on next magma release
     (fetchpatch {
